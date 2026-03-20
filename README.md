@@ -465,6 +465,17 @@ downstream automation.
 
 ---
 
+# Development Approach
+
+This project was built using an AI-assisted development workflow — here's exactly how it came together, because the process is as relevant as the code itself.
+The idea came about because I needed a structured way to run my job search like a sales pipeline. Having had experience in a sales department, I knew the job search itself needed to be treated like a B2B sales motion — so using Claude, I designed a "job search CRM" that will be used to document my job search process, and treat my job search as if I'm a salesperson selling myself. 
+I mapped out the architecture first: four linked databases mirroring the structure of a CRM (companies as accounts, job postings as deal intelligence, contacts as the buying committee, outreach as activity tracking). I defined every database property, its data type, its dropdown options, and how the databases related to each other. I wrote a detailed technical specification covering the full schema, the two-pass creation sequence required by the Notion API (databases must exist before relations can be wired between them), error handling requirements, CLI flag behavior, and the project's file structure.
+I then used Claude (Anthropic) to generate the implementation from that specification. The spec was detailed enough that the output required minimal correction — which is itself a skill. Prompt engineering for code generation requires you to think like an architect: anticipate edge cases, define interfaces clearly, and know enough about the target API to write constraints the model needs to respect.
+After generation, I set up the Notion integration, validated the workspace structure against my original design, and tested the seeded data and relation links.
+A note on the skill being demonstrated: The primary skill showcased here is not coding, and it's not database architecture. It's prompt engineering — the ability to communicate a complex, multi-layered problem to an AI system with enough precision and context that the output is useful on the first pass. That means understanding the problem deeply enough to fully specify it, knowing the constraints of the tools involved, and structuring information in a way the model can act on. That is an increasingly valuable professional skill, and this project is an intentional demonstration of it.
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
