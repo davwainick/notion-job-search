@@ -1,14 +1,15 @@
 """
-builder.py — Orchestrates the creation of the entire Job Search HQ workspace.
+builder.py — Orchestrates the creation of the entire job search workspace.
 
 Responsibility breakdown
 ------------------------
-* ``create_parent_page``   — creates the top-level "Job Search HQ" page
-* ``create_database``      — generic wrapper for POST /v1/databases
-* ``patch_relations``      — wires up cross-database relation properties
-* ``create_gap_analysis``  — builds the formatted Gap Analysis sub-page
-* ``seed_companies``       — inserts 5 sample company rows
-* ``build_workspace``      — top-level orchestrator called by the CLI
+* ``create_parent_page``    — creates the top-level workspace page
+* ``create_database``       — generic wrapper for POST /v1/databases
+* ``patch_relations``       — wires up cross-database relation properties
+* ``seed_companies``        — inserts generic placeholder company rows
+* ``create_gap_analysis``   — builds an empty Gap Analysis template page
+* ``update_gap_analysis``   — populates Gap Analysis with user-supplied content
+* ``build_workspace``       — top-level orchestrator called by CLI and GUI
 
 All functions accept a ``dry_run`` flag.  When *True* they print what they
 *would* do instead of hitting the API, which is useful for previewing the
@@ -19,8 +20,8 @@ IMPORTANT NOTE ON SDK USAGE
 The ``notion-client`` SDK's ``databases.create()`` and ``databases.update()``
 methods use an internal ``pick()`` function that whitelists only certain kwargs
 before forwarding them to the API body.  Crucially, ``properties`` is NOT in
-the whitelist for either method (as of the current SDK version), so passing
-``properties=...`` as a kwarg silently drops it — causing Notion to return
+the whitelist for either method, so passing ``properties=...`` as a kwarg
+silently drops it — causing Notion to return
 ``body.properties should be defined, instead was undefined``.
 
 The fix is to call ``client.request()`` directly for those two operations,
@@ -43,8 +44,6 @@ from notion_client import Client  # type: ignore
 from .client import safe_api_call
 from .config import (
     DB_NAMES,
-    GAP_ANALYSIS_GAPS,
-    GAP_ANALYSIS_STRENGTHS,
     SCHEMA_COMPANIES,
     SCHEMA_CONTACTS,
     SCHEMA_JOB_POSTINGS,
@@ -56,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal block factory helpers
 # ---------------------------------------------------------------------------
 
 def _rich_text(content: str) -> list[dict]:
@@ -133,19 +132,18 @@ def _callout(text: str, emoji: str = "💡") -> dict:
 def create_parent_page(
     client: Client,
     notion_parent_page_id: str,
+    workspace_name: str = "Job Search HQ",
     *,
     dry_run: bool = False,
 ) -> str:
     """
-    Create the top-level "Job Search HQ" page under the user's root page.
-
-    Uses ``client.pages.create()`` which correctly includes ``properties``
-    and ``children`` in its SDK whitelist.
+    Create the top-level workspace page under the user's root Notion page.
 
     Args:
         client:                 Authenticated Notion client.
         notion_parent_page_id:  ID of the existing Notion page that will
-                                contain Job Search HQ.
+                                contain the workspace.
+        workspace_name:         Display name for the workspace page.
         dry_run:                If *True*, print the payload and return a
                                 placeholder ID without hitting the API.
 
@@ -156,34 +154,38 @@ def create_parent_page(
         "parent": {"type": "page_id", "page_id": notion_parent_page_id},
         "icon": {"type": "emoji", "emoji": "🗂️"},
         "properties": {
-            "title": {"title": _rich_text("Job Search HQ")}
+            "title": {"title": _rich_text(workspace_name)}
         },
         "children": [
             _callout(
-                "This workspace is a B2B-style job-search CRM. "
+                f"Welcome to {workspace_name} — your personal job-search CRM. "
                 "Use Companies as your account list, Job Postings as your "
-                "opportunity log, Contacts as your buying-committee map, "
+                "opportunity log, Contacts as your network map, "
                 "and Outreach Log as your activity tracker.",
                 "🗂️",
             ),
             _divider(),
             _heading_2("📌 Quick Links"),
-            _paragraph("Use the linked databases below — linked views live in each section."),
+            _paragraph(
+                "Your four linked databases live below. "
+                "Open the Gap Analysis page to fill in your strengths and "
+                "interview prep notes."
+            ),
         ],
     }
 
     if dry_run:
-        logger.info("[DRY RUN] Would create parent page 'Job Search HQ':")
+        logger.info("[DRY RUN] Would create parent page '%s':", workspace_name)
         logger.info(json.dumps(payload, indent=2))
         return "dry-run-parent-page-id"
 
     response = safe_api_call(
         client.pages.create,
         **payload,
-        context="creating parent page 'Job Search HQ'",
+        context=f"creating parent page '{workspace_name}'",
     )
     page_id: str = response["id"]
-    logger.info("✅ Created parent page 'Job Search HQ'  (id: %s)", page_id)
+    logger.info("✅ Created parent page '%s'  (id: %s)", workspace_name, page_id)
     return page_id
 
 
@@ -221,7 +223,6 @@ def create_database(
     body = {
         "parent": {"type": "page_id", "page_id": parent_page_id},
         "title": _rich_text(db_name),
-        "is_inline": True,
         "properties": schema,
     }
 
@@ -260,10 +261,10 @@ def patch_relations(
     on each database to add the appropriate relation properties.
 
     Uses ``client.request()`` directly (PATCH /v1/databases/{id}) because
-    the SDK's ``databases.update()`` method also uses ``pick()`` and excludes
-    ``properties`` from its whitelist.
+    the SDK's ``databases.update()`` method also excludes ``properties``
+    from its ``pick()`` whitelist.
 
-    The relation map (what each DB links to):
+    The relation map:
     - Companies      → Job Postings, Contacts
     - Job Postings   → Companies
     - Contacts       → Companies, Outreach Log
@@ -274,7 +275,6 @@ def patch_relations(
         db_ids:  Dict mapping ``db_key`` → Notion database ID.
         dry_run: If *True*, print what would be patched without hitting the API.
     """
-    # Each entry: (db_key, relation_property_name, target_db_key)
     relations: list[tuple[str, str, str]] = [
         ("companies",    "Job Postings",  "job_postings"),
         ("companies",    "Contacts",      "contacts"),
@@ -334,13 +334,11 @@ def seed_companies(
     dry_run: bool = False,
 ) -> None:
     """
-    Insert five sample healthcare IT companies into the Companies database.
+    Insert generic placeholder company rows into the Companies database.
 
-    Each row is pre-filled with realistic "Why You Fit" notes tied to the
-    user's hospital IT background, certs, and target role types.
-
-    Uses ``client.pages.create()`` which correctly includes ``properties``
-    in its SDK whitelist.
+    These rows demonstrate the database schema without containing any
+    industry-specific or personal content.  Users should replace or
+    supplement them with their actual target companies.
 
     Args:
         client:  Authenticated Notion client.
@@ -391,21 +389,16 @@ def create_gap_analysis(
     dry_run: bool = False,
 ) -> str:
     """
-    Create a richly formatted "Gap Analysis" Notion page.
+    Create a structured but empty Gap Analysis template page in Notion.
 
-    The page has two sections:
-    1. **Strengths to Lead With** — pre-filled with the user's key assets
-       (hospital IT domain, ITIL cert, cybersecurity stack, Finance degree).
-    2. **Gaps / Objections to Prepare For** — the honest objections a hiring
-       manager might raise, each paired with a prepared rebuttal and
-       mitigation strategy.
-
-    Uses ``client.pages.create()`` which correctly includes ``children``
-    in its SDK whitelist.
+    The page is created with two section headings and instructional
+    placeholder callout blocks.  The user fills in their own content
+    either through the GUI (which calls ``update_gap_analysis``) or
+    directly in Notion.
 
     Args:
         client:         Authenticated Notion client.
-        parent_page_id: ID of the "Job Search HQ" parent page.
+        parent_page_id: ID of the workspace parent page.
         dry_run:        If *True*, print what would be created without API calls.
 
     Returns:
@@ -413,47 +406,35 @@ def create_gap_analysis(
     """
     blocks: list[dict] = [
         _callout(
-            "Use this page in interview prep.  Lead with the Strengths. "
-            "Anticipate every Objection and have your rebuttal ready.",
+            "Use this page to prepare for interviews. "
+            "Fill in your strengths and talking points in the first section, "
+            "then list any objections a hiring manager might raise along with "
+            "your prepared rebuttal for each.",
             "🧠",
         ),
         _divider(),
-        # --- Strengths section ---
         _heading_2("💪 Strengths to Lead With"),
-        _paragraph(
-            "These are your genuine differentiators as a career-pivoting "
-            "healthcare IT professional targeting SaaS Customer Success and "
-            "Sales Engineering roles."
+        _callout(
+            "Add your strengths here — e.g. relevant domain knowledge, "
+            "certifications, transferable skills, and a talking point for each. "
+            "Use the GUI or edit this page directly in Notion.",
+            "✏️",
+        ),
+        _divider(),
+        _heading_2("⚠️ Gaps & Objections to Prepare For"),
+        _callout(
+            "Add objections a hiring manager might raise here — "
+            "e.g. gaps in experience, career pivot concerns, location, salary. "
+            "For each one write a short rebuttal and a mitigation strategy.",
+            "✏️",
         ),
     ]
 
-    for item in GAP_ANALYSIS_STRENGTHS:
-        blocks.extend([
-            _heading_3(f"✅ {item['asset']}"),
-            _bulleted_item(f"Why it matters: {item['detail']}"),
-            _bulleted_item(f"How to say it: {item['talking_point']}"),
-        ])
-
-    blocks.extend([
-        _divider(),
-        # --- Gaps section ---
-        _heading_2("⚠️ Gaps & Objections to Prepare For"),
-        _paragraph(
-            "These are the objections a hiring manager or recruiter may raise. "
-            "Prepare a 30-second verbal rebuttal for each before any screen."
-        ),
-    ])
-
-    for item in GAP_ANALYSIS_GAPS:
-        blocks.extend([
-            _heading_3(f"🔴 {item['objection']}"),
-            _bulleted_item(f"Risk: {item['risk']}"),
-            _callout(f"Rebuttal: {item['rebuttal']}", "💬"),
-            _bulleted_item(f"Mitigation strategy: {item['mitigation']}"),
-        ])
-
     if dry_run:
-        logger.info("[DRY RUN] Would create 'Gap Analysis' page with %d blocks.", len(blocks))
+        logger.info(
+            "[DRY RUN] Would create 'Gap Analysis' template page with %d blocks.",
+            len(blocks),
+        )
         return "dry-run-gap-analysis-id"
 
     response = safe_api_call(
@@ -462,11 +443,107 @@ def create_gap_analysis(
         icon={"type": "emoji", "emoji": "🧠"},
         properties={"title": {"title": _rich_text("Gap Analysis")}},
         children=blocks,
-        context="creating 'Gap Analysis' page",
+        context="creating 'Gap Analysis' template page",
     )
     page_id: str = response["id"]
     logger.info("✅ Created 'Gap Analysis' page  (id: %s)", page_id)
     return page_id
+
+
+def update_gap_analysis(
+    client: Client,
+    gap_page_id: str,
+    strengths: list[dict],
+    gaps: list[dict],
+) -> None:
+    """
+    Populate the Gap Analysis page with user-supplied content.
+
+    Replaces all existing blocks on the page with freshly built content
+    from the provided strengths and gaps lists.  Called from the GUI after
+    the user fills in the Gap Analysis input screen.
+
+    If both lists are empty this function returns immediately without
+    making any API calls.
+
+    Args:
+        client:       Authenticated Notion client.
+        gap_page_id:  Notion page ID of the Gap Analysis page.
+        strengths:    List of dicts with keys ``"strength"`` and
+                      ``"talking_point"``.
+        gaps:         List of dicts with keys ``"objection"``, ``"rebuttal"``,
+                      and ``"mitigation"``.
+    """
+    if not strengths and not gaps:
+        logger.info("update_gap_analysis: nothing to update, both lists empty.")
+        return
+
+    # --- Delete existing blocks ---
+    existing = safe_api_call(
+        client.blocks.children.list,
+        gap_page_id,
+        context="listing existing Gap Analysis blocks",
+    )
+    for block in existing.get("results", []):
+        safe_api_call(
+            client.blocks.delete,
+            block["id"],
+            context=f"deleting block {block['id']}",
+        )
+
+    # --- Build new content ---
+    new_blocks: list[dict] = [
+        _callout(
+            "Use this page to prepare for interviews. "
+            "Lead with your Strengths. Anticipate every Objection.",
+            "🧠",
+        ),
+        _divider(),
+        _heading_2("💪 Strengths to Lead With"),
+    ]
+
+    for item in strengths:
+        strength = item.get("strength", "").strip()
+        talking_point = item.get("talking_point", "").strip()
+        if not strength:
+            continue
+        new_blocks.append(_heading_3(f"✅ {strength}"))
+        if talking_point:
+            new_blocks.append(_bulleted_item(f"Talking point: {talking_point}"))
+
+    new_blocks.extend([
+        _divider(),
+        _heading_2("⚠️ Gaps & Objections to Prepare For"),
+    ])
+
+    for item in gaps:
+        objection = item.get("objection", "").strip()
+        rebuttal = item.get("rebuttal", "").strip()
+        mitigation = item.get("mitigation", "").strip()
+        if not objection:
+            continue
+        new_blocks.append(_heading_3(f"🔴 {objection}"))
+        if rebuttal:
+            new_blocks.append(_callout(f"Rebuttal: {rebuttal}", "💬"))
+        if mitigation:
+            new_blocks.append(_bulleted_item(f"Mitigation: {mitigation}"))
+
+    # Notion limits blocks.children.append to 100 blocks per call
+    chunk_size = 100
+    for i in range(0, len(new_blocks), chunk_size):
+        chunk = new_blocks[i: i + chunk_size]
+        safe_api_call(
+            client.blocks.children.append,
+            gap_page_id,
+            children=chunk,
+            context="appending Gap Analysis content",
+        )
+
+    logger.info(
+        "✅ Updated Gap Analysis with %d strength(s) and %d gap(s).",
+        len(strengths),
+        len(gaps),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -476,47 +553,60 @@ def create_gap_analysis(
 def build_workspace(
     client: Client,
     notion_parent_page_id: str,
+    workspace_name: str = "Job Search HQ",
     *,
     dry_run: bool = False,
     seed_data: bool = False,
+    progress_callback: Any = None,
 ) -> dict[str, str]:
     """
     Orchestrate the full workspace build in the correct dependency order.
 
     Order of operations
     -------------------
-    1. Create the "Job Search HQ" parent page.
+    1. Create the workspace parent page.
     2. Create all four databases (no relations yet — target IDs not known).
     3. Patch relations onto each database now that all IDs are available.
-    4. (Optional) Seed sample company rows.
-    5. Create the Gap Analysis sub-page.
+    4. (Optional) Seed generic placeholder company rows.
+    5. Create the Gap Analysis template page.
 
     Args:
         client:                 Authenticated Notion client.
         notion_parent_page_id:  ID of the user's root Notion page.
+        workspace_name:         Display name for the workspace (default:
+                                ``"Job Search HQ"``).
         dry_run:                If *True*, simulate all operations and print
                                 payloads without hitting the API.
-        seed_data:              If *True*, insert the five sample company rows.
+        seed_data:              If *True*, insert 3 generic placeholder rows.
+        progress_callback:      Optional callable that accepts a string message.
+                                Called at the start of each step so a GUI can
+                                update a progress label.
 
     Returns:
-        A dict with keys ``"parent_page_id"``, ``"gap_analysis_id"``, and one
-        key per database (``"companies"``, ``"job_postings"``, ``"contacts"``,
+        A dict with keys ``"parent_page_id"``, ``"gap_analysis_id"``,
+        ``"notion_url"``, and one key per database
+        (``"companies"``, ``"job_postings"``, ``"contacts"``,
         ``"outreach_log"``), each mapping to its Notion ID.
     """
-    logger.info("=" * 60)
-    logger.info("  Building Job Search HQ workspace")
+    def _progress(msg: str) -> None:
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    _progress("=" * 60)
+    _progress(f"  Building workspace: {workspace_name}")
     if dry_run:
-        logger.info("  *** DRY RUN — no API calls will be made ***")
-    logger.info("=" * 60)
+        _progress("  *** DRY RUN — no API calls will be made ***")
+    _progress("=" * 60)
 
     # Step 1: Parent page
-    logger.info("\n[Step 1/5] Creating parent page …")
+    _progress(f"\n[Step 1/5] Creating parent page '{workspace_name}' …")
     parent_page_id = create_parent_page(
-        client, notion_parent_page_id, dry_run=dry_run
+        client, notion_parent_page_id, workspace_name, dry_run=dry_run
     )
 
     # Step 2: Databases
-    logger.info("\n[Step 2/5] Creating databases …")
+    _progress("\n[Step 2/5] Creating databases …")
     db_ids: dict[str, str] = {}
 
     db_schemas = {
@@ -532,28 +622,33 @@ def build_workspace(
         )
 
     # Step 3: Relations
-    logger.info("\n[Step 3/5] Wiring up cross-database relations …")
+    _progress("\n[Step 3/5] Wiring up cross-database relations …")
     patch_relations(client, db_ids, dry_run=dry_run)
 
     # Step 4: Seed data (optional)
     if seed_data:
-        logger.info("\n[Step 4/5] Seeding sample data …")
+        _progress("\n[Step 4/5] Seeding sample data …")
         seed_companies(client, db_ids, dry_run=dry_run)
     else:
-        logger.info("\n[Step 4/5] Skipping seed data (use --seed-data to enable).")
+        _progress("\n[Step 4/5] Skipping seed data (pass seed_data=True to enable).")
 
     # Step 5: Gap Analysis page
-    logger.info("\n[Step 5/5] Creating Gap Analysis page …")
+    _progress("\n[Step 5/5] Creating Gap Analysis page …")
     gap_analysis_id = create_gap_analysis(
         client, parent_page_id, dry_run=dry_run
     )
 
-    logger.info("\n" + "=" * 60)
-    logger.info("  ✅ Workspace build complete!")
-    logger.info("=" * 60)
+    # Build a direct Notion URL (hyphens stripped from the page ID)
+    clean_id = parent_page_id.replace("-", "")
+    notion_url = f"https://notion.so/{clean_id}"
+
+    _progress("\n" + "=" * 60)
+    _progress("  ✅ Workspace build complete!")
+    _progress("=" * 60)
 
     return {
         "parent_page_id":  parent_page_id,
         "gap_analysis_id": gap_analysis_id,
+        "notion_url":      notion_url,
         **db_ids,
     }

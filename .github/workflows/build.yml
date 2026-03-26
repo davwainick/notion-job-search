@@ -1,0 +1,128 @@
+name: Build Executables
+
+on:
+  push:
+    branches: [ "main" ]
+  release:
+    types: [ published ]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Windows
+  # ---------------------------------------------------------------------------
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller notion-client python-dotenv cryptography httpx httpcore
+          pip install -e .
+
+      - name: Build executable
+        run: python build.py
+
+      - name: Rename artifact
+        run: mv dist/NotionJobSearch.exe dist/NotionJobSearch-windows.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotionJobSearch-windows
+          path: dist/NotionJobSearch-windows.exe
+          retention-days: 30
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/NotionJobSearch-windows.exe
+
+  # ---------------------------------------------------------------------------
+  # macOS
+  # ---------------------------------------------------------------------------
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller notion-client python-dotenv cryptography httpx httpcore
+          pip install -e .
+
+      - name: Build executable
+        run: python build.py
+
+      - name: Rename artifact
+        run: mv dist/NotionJobSearch dist/NotionJobSearch-macos
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotionJobSearch-macos
+          path: dist/NotionJobSearch-macos
+          retention-days: 30
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/NotionJobSearch-macos
+
+  # ---------------------------------------------------------------------------
+  # Linux
+  # ---------------------------------------------------------------------------
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system Tkinter
+        run: sudo apt-get install -y python3-tk
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller notion-client python-dotenv cryptography httpx httpcore
+          pip install -e .
+
+      - name: Build executable
+        run: python build.py
+
+      - name: Rename artifact
+        run: mv dist/NotionJobSearch dist/NotionJobSearch-linux
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotionJobSearch-linux
+          path: dist/NotionJobSearch-linux
+          retention-days: 30
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/NotionJobSearch-linux

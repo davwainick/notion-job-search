@@ -1,321 +1,170 @@
 # notion-job-search
 
-> **Automatically scaffold a B2B-style job-search CRM in Notion — four linked
-> databases, a gap analysis page, and seed data, all built from a single
-> command.**
+> **Scaffold a job-search CRM workspace in Notion — four linked databases,
+> a Gap Analysis page, and optional seed data, all built from a single
+> command or one click.**
 
 ---
 
 ## Table of Contents
 
-- [What This Project Does](#what-this-project-does)
-- [Why It's Technically Interesting](#why-its-technically-interesting)
-- [The Workspace It Builds](#the-workspace-it-builds)
-- [Project Structure](#project-structure)
+- [Downloading the Executable](#downloading-the-executable)
+- [GUI Usage](#gui-usage)
+- [Building the Executable Yourself](#building-the-executable-yourself)
+- [CLI Usage](#cli-usage)
 - [Prerequisites](#prerequisites)
-- [Setup](#setup)
-- [Running the Script](#running-the-script)
+- [Setup (CLI)](#setup-cli)
 - [CLI Reference](#cli-reference)
 - [Running the Tests](#running-the-tests)
+- [Why It's Technically Interesting](#why-its-technically-interesting)
+- [Project Structure](#project-structure)
 - [Design Decisions](#design-decisions)
-- [Extending the Project](#extending-the-project)
 - [License](#license)
 
 ---
 
-## What This Project Does
+## Downloading the Executable
 
-`notion-job-search` is a Python package that calls the
-[Notion API](https://developers.notion.com/) to programmatically create a
-fully structured job-search workspace inside your Notion account.
+Pre-built binaries for **Windows**, **macOS**, and **Linux** are attached to
+every release on the GitHub Releases page.  No Python installation required.
 
-Running one command builds:
+👉 **[Download from Releases](https://github.com/YOURUSERNAME/notion-job-search/releases)**
 
-- A parent page called **Job Search HQ**
-- **Four linked databases** that mirror a B2B sales pipeline
-  (Companies → Job Postings → Contacts → Outreach Log)
-- All **cross-database relations** wired up automatically
-- A **Gap Analysis** sub-page with pre-filled interview prep content
-- Optionally, **five realistic seed rows** in the Companies database
+| Platform | File |
+|----------|------|
+| Windows | `NotionJobSearch-windows.exe` |
+| macOS   | `NotionJobSearch-macos` |
+| Linux   | `NotionJobSearch-linux` |
 
-The whole workspace is ready to use in under 60 seconds — no clicking through
-Notion's UI, no copying templates, no manually setting up 60+ properties across
-four databases.
+The executables are built automatically by GitHub Actions on every release —
+see [`.github/workflows/build.yml`](.github/workflows/build.yml).
 
 ---
 
-## Why It's Technically Interesting
+## GUI Usage
 
-If you're a technical recruiter or hiring manager reviewing this project, here
-is a quick summary of the engineering decisions that make it worth reading:
+### Screen 1 — Setup (first run)
 
-### 1. Real API orchestration with dependency ordering
+On first launch the app shows a setup form:
 
-Notion's relation properties require the *target* database to already exist
-before you can create a property that points to it.  The script handles this
-by:
+1. **Notion Integration Token** — paste your `secret_` token
+   (click the *How do I get this?* link if you need one)
+2. **Parent Page ID** — the ID from your Notion page's URL
+3. **Workspace Name** — what to call the page in Notion (default: `Job Search HQ`)
+4. Optionally check **Add 3 sample company rows**
+5. Click **Create Workspace**
 
-1. Creating all four databases first (no relations).
-2. Collecting their IDs from the API responses.
-3. Making a second pass (`PATCH /v1/databases/{id}`) to wire up the seven
-   cross-database relations.
+A live progress indicator updates through each of the 5 build steps.
+If anything fails, the error is shown in red and the button re-enables
+so you can try again.
 
-This is a real constraint of the Notion API that trips up naive implementations.
+### Screen 2 — Gap Analysis input
 
-### 2. Separation of concerns
+After the workspace is built you are taken to the Gap Analysis screen.
+Here you can:
 
-The codebase is split into three distinct layers:
+- Add **Strengths** — each with a talking point for interviews
+- Add **Gaps / Objections** — each with a rebuttal and mitigation strategy
 
-| Module | Responsibility |
-|--------|----------------|
-| `config.py` | **Schema definitions only** — all property declarations, seed data, and gap analysis content live here as pure data structures, completely separate from any API logic |
-| `builder.py` | **Orchestration** — constructs payloads from config data and calls the API in the right order |
-| `client.py` | **Network concerns** — auth, version pinning, and error wrapping |
-| `cli.py` | **User interface** — `argparse`, `.env` loading, exit codes |
+Click **Save & Open Notion** to write your content to the Gap Analysis page
+and open Notion in your browser, or **Skip** to fill it in later directly
+in Notion.
 
-This structure means you can change a database schema by editing one dict in
-`config.py` without touching any API code.
+### Screen 3 — Returning user
 
-### 3. API version pinning
+On subsequent launches the app shows a list of your previously created
+workspaces.  From here you can:
 
-The Notion API introduced breaking changes in its September 2025 version.  All
-requests in this project send the `Notion-Version: 2022-06-28` header
-(configured once in `client.py`, applied to every request automatically via
-the SDK), ensuring stability regardless of when the script is run.
+- **Open in Notion** — jump straight to the workspace
+- **Create New Workspace** — go back to the setup form
+- **Delete** — remove an entry from the local list (does not delete anything in Notion)
 
-### 4. Official SDK over raw requests
-
-The project uses the official [`notion-client`](https://github.com/ramnes/notion-sdk-py)
-Python SDK rather than `requests`.  The SDK provides:
-
-- Automatic request retries on transient failures
-- Typed `APIResponseError` exceptions with `.status`, `.code`, and `.message`
-- Cleaner, more maintainable call syntax
-
-### 5. Graceful error handling
-
-Every API call is wrapped in `safe_api_call()`, which catches
-`APIResponseError` and re-raises it as a `RuntimeError` with a human-readable
-message that includes the HTTP status code, Notion's error code, and the
-context of what was being attempted — so failures are debuggable without
-reading the Notion API docs.
-
-### 6. `--dry-run` mode
-
-The `--dry-run` flag lets you preview exactly what *would* be sent to the API
-(full JSON payloads, all seven relation patches, all seed rows) without making
-a single network call.  Useful for:
-
-- Reviewing the workspace structure before committing
-- Running in CI without a real Notion token
-- Demoing the tool to someone else
-
-### 7. Fully tested with no external dependencies
-
-The test suite (`tests/test_builder.py`) achieves full coverage of the
-builder logic using `unittest.mock` — no real Notion account or token
-required.  `notion_client` is stubbed at import time, so `pytest tests/` runs
-completely offline.
+Your integration token is encrypted and stored locally at
+`~/.notion_job_search/workspaces.json`.
 
 ---
 
-## The Workspace It Builds
+## Building the Executable Yourself
 
-### 🏢 Companies — the account CRM
+```bash
+# Install build dependencies
+pip install pyinstaller notion-client python-dotenv cryptography
 
-Your master list of target employers, modelled after an account list in a B2B
-CRM.  Each row tracks a company's product, your fit rationale, open roles, and
-next actions.
-
-**Key properties:** Company Name · Product/Platform · Tier (1/2/3) · Status
-pipeline · Remote Posture · Funding Stage · Why You Fit · Website / Careers /
-LinkedIn · Next Action · Due Date
-
-**Relations to:** Job Postings, Contacts
-
----
-
-### 📋 Job Postings — role intelligence log
-
-Every specific job posting you find goes here.  Captures technical
-requirements, EHR/platform mentions, qualification gaps, and apply decision.
-
-**Key properties:** Job Title · Role Type · Date Found · Salary Range · Job
-Post URL · Required Technical Skills · EHR/Platform Mentioned · Do You Qualify?
-· Gaps Identified · Apply?
-
-**Relations to:** Companies
-
----
-
-### 👥 Contacts — buying committee map
-
-Your network mapped to specific companies.  Tracks connection degree, warm
-intro availability, and outreach sequencing.
-
-**Key properties:** Full Name · Title · Contact Type (Hiring Manager / Peer /
-Recruiter / Executive / Alumni) · Priority · LinkedIn URL · Connection Degree ·
-Warm Intro Available? · Next Action
-
-**Relations to:** Companies, Outreach Log
-
----
-
-### 📬 Outreach Log — activity tracker
-
-Every message, DM, email, and follow-up logged here.  Prevents the embarrassing
-double-message and ensures nothing falls through the cracks.
-
-**Key properties:** Subject/Purpose · Date Sent · Channel · Message Type ·
-Personalization Hook · Response Received? · Outcome
-
-**Relations to:** Contacts, Companies
-
----
-
-### 🧠 Gap Analysis — interview prep page
-
-A structured, pre-filled page with two sections:
-
-- **Strengths to Lead With** — domain knowledge, ITIL cert, cybersecurity
-  stack, Finance degree, with a ready-to-use talking point for each
-- **Gaps & Objections to Prepare For** — no direct SaaS experience, no quota
-  history, relocation timing, salary target — each with a prepared rebuttal
-  and mitigation strategy
-
----
-
-### Seed Data (optional, via `--seed-data`)
-
-Five pre-filled Companies rows:
-
-| Company | Platform | Tier | Pre-written "Why You Fit" |
-|---------|----------|------|---------------------------|
-| Epic Systems | Epic EHR (Hyperspace, MyChart) | Tier 1 | ✅ Hospital IT credibility |
-| Health Catalyst | DOS + Analytics Accelerators | Tier 1 | ✅ Finance degree for ROI conversations |
-| Greenway Health | Intergy EHR + RCM | Tier 2 | ✅ Cert stack for HIPAA-heavy customers |
-| Veeva Systems | Vault QMS/RIM + CRM | Tier 1 | ✅ Life sciences adjacency |
-| ServiceNow | Now Platform (ITSM, Healthcare) | Tier 2 | ✅ ITIL cert = direct differentiator |
-
----
-
-## Project Structure
-
+# Run the build script from the project root
+python build.py
 ```
-notion-job-search/
-│
-├── notion_job_search/          # The Python package
-│   ├── __init__.py             # Package metadata
-│   ├── __main__.py             # Enables: python -m notion_job_search
-│   ├── cli.py                  # argparse CLI, .env loading, exit codes
-│   ├── client.py               # Notion SDK wrapper, auth, error handling
-│   ├── builder.py              # Workspace orchestration logic
-│   └── config.py               # All schemas, seed data, gap analysis content
-│
-├── tests/
-│   ├── __init__.py
-│   └── test_builder.py         # 40+ unit tests, runs 100% offline
-│
-├── .env.example                # Template — copy to .env and fill in
-├── .gitignore                  # Includes .env
-├── requirements.txt
-├── setup.py                    # pip-installable, registers CLI entry point
-└── README.md
+
+The output is placed in `dist/`:
+- Windows: `dist/NotionJobSearch.exe`
+- macOS / Linux: `dist/NotionJobSearch`
+
+Do **not** commit the `dist/` or `build/` directories — they are in `.gitignore`.
+
+---
+
+## CLI Usage
+
+If you prefer the command line, no GUI is needed:
+
+```bash
+# Copy .env.example to .env and fill in your token and page ID
+cp .env.example .env
+
+# Preview what would be created (no API calls)
+python -m notion_job_search --dry-run
+
+# Build the workspace
+python -m notion_job_search
+
+# Custom name + seed data
+python -m notion_job_search --name "My 2025 Job Hunt" --seed-data
+
+# Verbose output
+python -m notion_job_search --seed-data --verbose
 ```
+
+The CLI creates the Gap Analysis page with instructional placeholder text.
+Fill it in directly in Notion or use the GUI.
 
 ---
 
 ## Prerequisites
 
-- Python 3.10 or higher
+- Python 3.10+ (CLI / build only — the executable is standalone)
 - A free [Notion](https://notion.so) account
-- A Notion Internal Integration (takes ~2 minutes to create)
-- An existing Notion page to use as the workspace root
+- A Notion Internal Integration token
+- An existing Notion page to use as the workspace parent
 
 ---
 
-## Setup
+## Setup (CLI)
 
-### 1. Clone the repository
+### 1. Clone and install
 
 ```bash
-git clone https://github.com/yourusername/notion-job-search.git
+git clone https://github.com/YOURUSERNAME/notion-job-search.git
 cd notion-job-search
-```
-
-### 2. Create a virtual environment and install dependencies
-
-```bash
 python -m venv venv
-source venv/bin/activate      # macOS/Linux
-# venv\Scripts\activate       # Windows
-
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Create a Notion integration
+### 2. Create a Notion integration
 
-1. Go to [https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)
-2. Click **+ New integration**
-3. Give it a name (e.g. "Job Search Builder") and select your workspace
-4. Copy the **Internal Integration Token** — it starts with `secret_`
+1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Click **+ New integration**, name it, copy the token (`secret_…`)
 
-### 4. Connect the integration to your root page
+### 3. Connect it to a page
 
-1. Open the Notion page you want to use as the parent (or create a blank one)
-2. Click the `···` menu (top-right) → **Connections** → find your integration → **Connect**
-3. Copy the page's ID from its URL:
-   `https://notion.so/myworkspace/`**`1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d`**`?v=...`
+1. Open your root Notion page → `···` menu → **Connections** → select your integration
+2. Copy the page ID from the URL:
+   `notion.so/workspace/`**`1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d`**
 
-### 5. Configure your `.env` file
+### 4. Configure `.env`
 
 ```bash
 cp .env.example .env
-```
-
-Edit `.env`:
-
-```dotenv
-NOTION_TOKEN=secret_your_token_here
-NOTION_PARENT_PAGE_ID=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
-```
-
----
-
-## Running the Script
-
-### Preview first (recommended)
-
-```bash
-python -m notion_job_search --dry-run
-```
-
-This prints every payload that *would* be sent to the API — all database
-schemas, all seven relation patches, the Gap Analysis block structure — without
-making a single network call.
-
-### Build the workspace
-
-```bash
-python -m notion_job_search
-```
-
-### Build the workspace + seed data
-
-```bash
-python -m notion_job_search --seed-data
-```
-
-### Build with verbose logging
-
-```bash
-python -m notion_job_search --seed-data --verbose
-```
-
-### If you installed the package (`pip install -e .`)
-
-```bash
-notion-job-search --seed-data
+# Edit .env: fill in NOTION_TOKEN and NOTION_PARENT_PAGE_ID
 ```
 
 ---
@@ -324,161 +173,144 @@ notion-job-search --seed-data
 
 ```
 usage: notion-job-search [-h] [--dry-run] [--seed-data]
-                          [--token TOKEN] [--parent PAGE_ID]
-                          [--verbose]
-
-Scaffold a job-search CRM workspace in Notion — four linked
-databases modelled on a B2B sales pipeline.
+                          [--name NAME] [--token TOKEN]
+                          [--parent PAGE_ID] [--verbose]
 
 options:
-  -h, --help         show this help message and exit
-  --dry-run          Simulate all operations and print the payloads that
-                     WOULD be sent to the Notion API, without making any
-                     actual API calls.
-  --seed-data        After scaffolding the databases, insert five sample
-                     healthcare IT company rows with realistic 'Why You
-                     Fit' notes.
-  --token TOKEN      Notion integration token.  Overrides the NOTION_TOKEN
-                     environment variable.
-  --parent PAGE_ID   Notion parent page ID.  Overrides
-                     NOTION_PARENT_PAGE_ID environment variable.
-  --verbose          Enable DEBUG-level logging.
-```
-
-**Example output (successful run with `--seed-data`):**
-
-```
-============================================================
-  Building Job Search HQ workspace
-============================================================
-
-[Step 1/5] Creating parent page …
-✅ Created parent page 'Job Search HQ'  (id: abc-123...)
-
-[Step 2/5] Creating databases …
-✅ Created database '🏢 Companies          '  (id: ...)
-✅ Created database '📋 Job Postings       '  (id: ...)
-✅ Created database '👥 Contacts           '  (id: ...)
-✅ Created database '📬 Outreach Log       '  (id: ...)
-
-[Step 3/5] Wiring up cross-database relations …
-🔗 Linked  🏢 Companies          [Job Postings]         → 📋 Job Postings
-🔗 Linked  🏢 Companies          [Contacts]             → 👥 Contacts
-🔗 Linked  📋 Job Postings       [Company]              → 🏢 Companies
-🔗 Linked  👥 Contacts           [Company]              → 🏢 Companies
-🔗 Linked  👥 Contacts           [Outreach Log]         → 📬 Outreach Log
-🔗 Linked  📬 Outreach Log       [Contact]              → 👥 Contacts
-🔗 Linked  📬 Outreach Log       [Company]              → 🏢 Companies
-
-[Step 4/5] Seeding sample data …
-  ➕ Seeded company: Epic Systems
-  ➕ Seeded company: Health Catalyst
-  ➕ Seeded company: Greenway Health
-  ➕ Seeded company: Veeva Systems
-  ➕ Seeded company: ServiceNow
-
-[Step 5/5] Creating Gap Analysis page …
-✅ Created 'Gap Analysis' page  (id: ...)
-
-============================================================
-  ✅ Workspace build complete!
-============================================================
+  --dry-run        Simulate all operations, print payloads, no API calls
+  --seed-data      Insert 3 generic placeholder company rows
+  --name NAME      Workspace name (default: "Job Search HQ")
+  --token TOKEN    Notion token (overrides NOTION_TOKEN env var)
+  --parent PAGE_ID Parent page ID (overrides NOTION_PARENT_PAGE_ID)
+  --verbose        DEBUG-level logging
 ```
 
 ---
 
 ## Running the Tests
 
-The test suite runs completely offline — `notion_client` is mocked at import
-time, so no token or internet connection is needed.
+The full test suite runs offline — no Notion account needed.
 
 ```bash
 pytest tests/ -v
 ```
 
-Expected output:
+---
+
+## Why It's Technically Interesting
+
+### Two-pass API orchestration
+
+Notion's relation properties require the *target* database to already exist.
+The script handles this with a two-pass approach:
+
+1. Create all four databases — collect their IDs from the API responses
+2. Make a second round of `PATCH /v1/databases/{id}` calls to wire up the
+   seven cross-database relations
+
+This is a hard constraint of the Notion API that naive implementations miss.
+
+### SDK `pick()` whitelist fix
+
+The `notion-client` SDK's `databases.create()` and `databases.update()`
+methods use an internal `pick()` function that whitelists only specific kwargs.
+`properties` is **not** on that whitelist, so it is silently dropped —
+causing Notion to return `body.properties should be defined, instead was undefined`.
+
+The fix uses `client.request()` directly for those two calls:
+
+```python
+# Wrong — properties silently dropped by pick()
+client.databases.create(parent=..., title=..., properties=schema)
+
+# Correct — bypasses pick(), sends full body
+client.request(path="databases", method="POST", body={
+    "parent": ..., "title": ..., "properties": schema
+})
+```
+
+### Separation of concerns
+
+| Module | Responsibility |
+|--------|----------------|
+| `config.py` | All schema definitions and seed data — pure data, no API logic |
+| `builder.py` | Orchestration — builds payloads, calls API in correct order |
+| `client.py` | Network concerns — auth, version pin, error wrapping |
+| `cli.py` | CLI interface — argparse, .env loading, exit codes |
+| `gui.py` | GUI interface — Tkinter three-screen workflow |
+| `state.py` | Persistence — encrypted local state file |
+
+### Machine-local token encryption
+
+The GUI stores the Notion integration token encrypted at rest using Fernet
+symmetric encryption. A key is generated once at `~/.notion_job_search/.key`
+and reused on subsequent runs — the token is never stored in plain text.
+
+### GitHub Actions cross-platform builds
+
+`.github/workflows/build.yml` builds Windows, macOS, and Linux executables
+in parallel on every push to `main` and attaches them to GitHub Releases
+automatically.
+
+---
+
+## Project Structure
 
 ```
-tests/test_builder.py::TestRichText::test_returns_list PASSED
-tests/test_builder.py::TestRichText::test_correct_structure PASSED
-...
-tests/test_builder.py::TestBuildWorkspace::test_dry_run_returns_dict_with_all_keys PASSED
-...
-40 passed in 0.12s
+notion-job-search/
+│
+├── notion_job_search/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── builder.py       — workspace orchestration
+│   ├── cli.py           — command-line interface
+│   ├── client.py        — Notion SDK wrapper + error handling
+│   ├── config.py        — all schemas and seed data
+│   ├── gui.py           — Tkinter GUI (three-screen workflow)
+│   └── state.py         — encrypted local state file management
+│
+├── tests/
+│   ├── __init__.py
+│   ├── test_builder.py  — builder + config tests (offline)
+│   └── test_state.py    — state file tests (offline, tmp_path)
+│
+├── .github/
+│   └── workflows/
+│       └── build.yml    — CI: builds Win/macOS/Linux executables
+│
+├── build.py             — PyInstaller build script
+├── .env.example
+├── .gitignore
+├── LICENSE
+├── README.md
+├── requirements.txt
+└── setup.py
 ```
 
 ---
 
 ## Design Decisions
 
-### Why `notion-client` (SDK) instead of `requests`?
+**Why `client.request()` instead of `client.databases.create()`?**
+The SDK's convenience methods filter kwargs through a `pick()` whitelist.
+`properties` is excluded, so it gets silently dropped. `client.request()`
+bypasses this and sends whatever body you provide.
 
-The official SDK handles auth headers, retries on 429 (rate-limit), and exposes
-typed `APIResponseError` exceptions.  Using `requests` directly would require
-reimplementing all of this and produces noisier, less maintainable code.
+**Why Tkinter?**
+Zero external GUI dependencies — Tkinter ships with Python on all platforms,
+which keeps the executable size manageable and eliminates install friction.
 
-### Why separate config from builder?
+**Why a machine-local key for encryption?**
+Tying the key to a persistent file (rather than deriving from hostname or
+hardware) means the key survives hostname changes and renames, while still
+protecting the token from casual inspection of the JSON file.
 
-A hiring manager reviewing this code can read `config.py` and immediately
-understand the full data model without reading a single line of API logic.  The
-schemas are just Python dicts — no special knowledge required.  This is the
-same separation used in Django's `models.py` vs `views.py` pattern.
-
-### Why `--dry-run`?
-
-CI pipelines and code reviewers should be able to validate the logic without
-needing a live Notion account.  `--dry-run` makes the tool testable in any
-environment and demonstrates awareness of operational concerns beyond just
-"make it work."
-
-### Why pin to `Notion-Version: 2022-06-28`?
-
-Notion released a new API version in September 2025 with breaking changes.
-Pinning the version in one place (`config.NOTION_API_VERSION`) means upgrading
-is a single-line change, and the current version is explicit and auditable.
-
-### Why create databases before patching relations?
-
-This is a hard constraint of the Notion API: you cannot create a relation
-property pointing at a database that doesn't exist yet.  The two-pass approach
-(create all DBs → patch all relations) is the only correct solution.
-
----
-
-## Extending the Project
-
-**Add a new database property:**
-Edit the relevant `SCHEMA_*` dict in `config.py`.  No other file needs to change.
-
-**Add more seed companies:**
-Add an entry to `SEED_COMPANIES` in `config.py`.
-
-**Add a new database:**
-1. Add its name to `DB_NAMES` in `config.py`
-2. Define its schema as `SCHEMA_NEWDB` in `config.py`
-3. Add it to the `db_schemas` dict in `builder.build_workspace()`
-4. Add its relation entries to the `relations` list in `builder.patch_relations()`
-
-**Export workspace IDs for use in other scripts:**
-`build_workspace()` returns a dict of all created IDs — pipe them into any
-downstream automation.
-
----
-
-# Development Approach
-
-This project was built using an AI-assisted development workflow — here's exactly how it came together, because the process is as relevant as the code itself.
-The idea came about because I needed a structured way to run my job search like a sales pipeline. Having had experience in a sales department, I knew the job search itself needed to be treated like a B2B sales motion — so using Claude, I designed a "job search CRM" that will be used to document my job search process, and treat my job search as if I'm a salesperson selling myself. 
-I mapped out the architecture first: four linked databases mirroring the structure of a CRM (companies as accounts, job postings as deal intelligence, contacts as the buying committee, outreach as activity tracking). I defined every database property, its data type, its dropdown options, and how the databases related to each other. I wrote a detailed technical specification covering the full schema, the two-pass creation sequence required by the Notion API (databases must exist before relations can be wired between them), error handling requirements, CLI flag behavior, and the project's file structure.
-I then used Claude (Anthropic) to generate the implementation from that specification. The spec was detailed enough that the output required minimal correction — which is itself a skill. Prompt engineering for code generation requires you to think like an architect: anticipate edge cases, define interfaces clearly, and know enough about the target API to write constraints the model needs to respect.
-After generation, I set up the Notion integration, validated the workspace structure against my original design, and tested the seeded data and relation links.
-A note on the skill being demonstrated: The primary skill showcased here is not coding, and it's not database architecture. It's prompt engineering — the ability to communicate a complex, multi-layered problem to an AI system with enough precision and context that the output is useful on the first pass. That means understanding the problem deeply enough to fully specify it, knowing the constraints of the tools involved, and structuring information in a way the model can act on. That is an increasingly valuable professional skill, and this project is an intentional demonstration of it.
+**Why `--dry-run`?**
+Lets the tool be tested in CI and demoed without a live Notion account.
+Every payload that would be sent is printed in full.
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
-
-
+MIT — see [LICENSE](LICENSE).

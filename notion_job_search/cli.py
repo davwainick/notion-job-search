@@ -8,12 +8,13 @@ Usage
     python -m notion_job_search [OPTIONS]
 
     Options:
-      --dry-run     Print what would be created without calling the Notion API.
-      --seed-data   Insert five sample company rows after scaffolding.
-      --token TEXT  Notion integration token (overrides NOTION_TOKEN env var).
-      --parent TEXT Notion parent page ID (overrides NOTION_PARENT_PAGE_ID env var).
-      --verbose     Enable DEBUG-level logging.
-      --help        Show this message and exit.
+      --dry-run        Print what would be created without calling the Notion API.
+      --seed-data      Insert 3 generic placeholder company rows after scaffolding.
+      --name TEXT      Workspace name (default: "Job Search HQ").
+      --token TEXT     Notion integration token (overrides NOTION_TOKEN env var).
+      --parent TEXT    Notion parent page ID (overrides NOTION_PARENT_PAGE_ID).
+      --verbose        Enable DEBUG-level logging.
+      --help           Show this message and exit.
 
 The script loads ``.env`` automatically via ``python-dotenv`` so you do not
 need to export variables manually before running.
@@ -52,14 +53,17 @@ Examples:
   # Preview exactly what would be created, no API calls:
   python -m notion_job_search --dry-run
 
-  # Build the workspace and seed with 5 sample companies:
+  # Build the workspace with a custom name:
+  python -m notion_job_search --name "My Job Search"
+
+  # Build the workspace and seed with 3 generic placeholder companies:
   python -m notion_job_search --seed-data
 
   # Build with verbose logging:
   python -m notion_job_search --seed-data --verbose
 
-  # Override credentials inline (useful in CI):
-  python -m notion_job_search --token secret_xxx --parent abc123 --seed-data
+  # Override credentials inline:
+  python -m notion_job_search --token secret_xxx --parent abc123
         """,
     )
 
@@ -69,8 +73,7 @@ Examples:
         default=False,
         help=(
             "Simulate all operations and print the payloads that WOULD be sent "
-            "to the Notion API, without making any actual API calls.  Useful "
-            "for previewing the workspace structure before committing."
+            "to the Notion API, without making any actual API calls."
         ),
     )
     parser.add_argument(
@@ -78,9 +81,18 @@ Examples:
         action="store_true",
         default=False,
         help=(
-            "After scaffolding the databases, insert five sample healthcare IT "
-            "company rows (Epic, Health Catalyst, Greenway Health, Veeva, "
-            "ServiceNow) with realistic 'Why You Fit' notes."
+            "After scaffolding the databases, insert 3 generic placeholder "
+            "company rows (Acme Corp, Example Inc, Sample Co) to demonstrate "
+            "the schema."
+        ),
+    )
+    parser.add_argument(
+        "--name",
+        metavar="NAME",
+        default="Job Search HQ",
+        help=(
+            "Display name for the workspace page created in Notion. "
+            "Defaults to 'Job Search HQ'."
         ),
     )
     parser.add_argument(
@@ -89,7 +101,7 @@ Examples:
         default=None,
         help=(
             "Notion integration token.  Overrides the NOTION_TOKEN environment "
-            "variable.  If omitted, the value from .env is used."
+            "variable."
         ),
     )
     parser.add_argument(
@@ -97,7 +109,7 @@ Examples:
         metavar="PAGE_ID",
         default=None,
         help=(
-            "Notion page ID of the root page that will contain Job Search HQ. "
+            "Notion page ID of the root page that will contain the workspace. "
             "Overrides the NOTION_PARENT_PAGE_ID environment variable."
         ),
     )
@@ -105,7 +117,7 @@ Examples:
         "--verbose",
         action="store_true",
         default=False,
-        help="Enable DEBUG-level logging (very chatty — mainly for development).",
+        help="Enable DEBUG-level logging.",
     )
 
     return parser
@@ -139,7 +151,6 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code — ``0`` on success, ``1`` on error.
     """
-    # Load .env before parsing args so env vars are available as defaults.
     load_dotenv()
 
     parser = _build_arg_parser()
@@ -148,7 +159,6 @@ def main(argv: list[str] | None = None) -> int:
 
     logger = logging.getLogger(__name__)
 
-    # Resolve credentials — CLI flags take precedence over env vars.
     token = args.token or os.getenv("NOTION_TOKEN")
     parent_page_id = args.parent or os.getenv("NOTION_PARENT_PAGE_ID")
 
@@ -167,7 +177,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # Use a placeholder in dry-run mode so the rest of the code can run.
     if args.dry_run and not parent_page_id:
         parent_page_id = "dry-run-parent-page-id"
 
@@ -176,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         result = build_workspace(
             client,
             parent_page_id,
+            args.name,
             dry_run=args.dry_run,
             seed_data=args.seed_data,
         )
@@ -191,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("\n📋 Created resource IDs:")
         for key, value in result.items():
             logger.info("   %-20s %s", key + ":", value)
+        logger.info("\n🌐 Open in Notion: %s", result.get("notion_url", ""))
 
     return 0
 
