@@ -48,6 +48,10 @@ def main() -> None:
         print(f"ERROR: Entry point not found: {entry_point}", file=sys.stderr)
         sys.exit(1)
 
+    # Force UTF-8 output on Windows to avoid cp1252 encoding errors
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     is_windows = sys.platform.startswith("win")
     is_mac = sys.platform == "darwin"
 
@@ -104,7 +108,7 @@ def main() -> None:
 
     print()
     print("=" * 60)
-    print("✅ Build complete!")
+    print("BUILD COMPLETE")
     print(f"   Executable: {output}")
     print()
     print("Test it with:")
@@ -113,7 +117,7 @@ def main() -> None:
     else:
         print(f"   chmod +x {output} && {output}")
     print()
-    print("⚠️  Do NOT commit dist/ or build/ to git.")
+    print("NOTE: Do NOT commit dist/ or build/ to git.")
     print("=" * 60)
 
 
