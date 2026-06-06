@@ -28,7 +28,7 @@
 Pre-built binaries for **Windows**, **macOS**, and **Linux** are attached to
 every release on the GitHub Releases page.  No Python installation required.
 
-👉 **[Download from Releases](https://github.com/YOURUSERNAME/notion-job-search/releases)**
+👉 **[Download from Releases](https://github.com/davwainick/notion-job-search/releases)**
 
 | Platform | File |
 |----------|------|
